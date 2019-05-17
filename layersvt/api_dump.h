@@ -915,6 +915,12 @@ inline std::ostream &dump_text_void(const void *object, const ApiDumpSettings &s
 
 inline std::ostream &dump_text_int(int object, const ApiDumpSettings &settings, int indents) { return settings.stream() << object; }
 
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+inline std::ostream &dump_text_HMONITOR(HMONITOR object, const ApiDumpSettings &settings, int indents) {
+    return settings.stream() << object;
+}
+#endif // VK_USE_PLATFORM_WIN32_KHR
+
 //==================================== Html Backend Helpers ======================================//
 
 inline std::ostream &dump_html_nametype(std::ostream &stream, bool showType, const char *name, const char *type) {
@@ -1067,3 +1073,11 @@ inline std::ostream &dump_html_int(int object, const ApiDumpSettings &settings, 
     settings.stream() << object;
     return settings.stream() << "</div>";
 }
+
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+inline std::ostream &dump_html_HMONITOR(HMONITOR object, const ApiDumpSettings &settings, int indents) {
+    settings.stream() << "<div class='val'>";
+    settings.stream() << object;
+    return settings.stream() << "</div>";
+}
+#endif // VK_USE_PLATFORM_WIN32_KHR

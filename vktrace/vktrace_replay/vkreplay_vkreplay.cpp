@@ -624,7 +624,7 @@ VkResult vkReplay::manually_replay_vkCreateDevice(packet_vkCreateDevice *pPacket
     const char strScreenShot[] = "VK_LAYER_LUNARG_screenshot";
 
     for (uint32_t i = 0; i < pPacket->pCreateInfo->queueCreateInfoCount; i++)
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)&pPacket->pCreateInfo->pQueueCreateInfos[i]);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)&pPacket->pCreateInfo->pQueueCreateInfos[i]);
 
     if (remappedPhysicalDevice == VK_NULL_HANDLE) {
         vktrace_LogError("Skipping vkCreateDevice() due to invalid remapped VkPhysicalDevice.");
@@ -1073,7 +1073,7 @@ VkResult vkReplay::manually_replay_vkQueueBindSparse(packet_vkQueueBindSparse *p
     VkSparseImageOpaqueMemoryBindInfo *sIMOBinf = NULL;
 
     for (uint32_t bindInfo_idx = 0; bindInfo_idx < pPacket->bindInfoCount; bindInfo_idx++) {
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)&remappedBindSparseInfos[bindInfo_idx]);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)&remappedBindSparseInfos[bindInfo_idx]);
 
         if (remappedBindSparseInfos[bindInfo_idx].pBufferBinds) {
             remappedBindSparseInfos[bindInfo_idx].pBufferBinds =
@@ -1555,7 +1555,7 @@ VkResult vkReplay::manually_replay_vkCreateComputePipelines(packet_vkCreateCompu
 
     // Fix up stage sub-elements
     for (i = 0; i < pPacket->createInfoCount; i++) {
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)&pLocalCIs[i]);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)&pLocalCIs[i]);
 
         pLocalCIs[i].stage.module = m_objMapper.remap_shadermodules(pLocalCIs[i].stage.module);
 
@@ -1623,17 +1623,17 @@ VkResult vkReplay::manually_replay_vkCreateGraphicsPipelines(packet_vkCreateGrap
             }
         }
 
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)&pCIs[i]);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pStages);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pVertexInputState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pInputAssemblyState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pTessellationState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pViewportState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pRasterizationState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pMultisampleState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pDepthStencilState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pColorBlendState);
-        vktrace_interpret_pnext_pointers(pPacket->header, (void *)pCIs[i].pDynamicState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)&pCIs[i]);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pStages);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pVertexInputState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pInputAssemblyState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pTessellationState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pViewportState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pRasterizationState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pMultisampleState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pDepthStencilState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pColorBlendState);
+        vkreplay_process_pnext_structs(pPacket->header, (void *)pCIs[i].pDynamicState);
 
         pCIs[i].layout = m_objMapper.remap_pipelinelayouts(pPacket->pCreateInfos[i].layout);
         if (pCIs[i].layout == VK_NULL_HANDLE) {
@@ -2285,17 +2285,6 @@ VkResult vkReplay::manually_replay_vkAllocateMemory(packet_vkAllocateMemory *pPa
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
-    if (pPacket->pAllocateInfo->pNext) {
-        VkDedicatedAllocationMemoryAllocateInfoNV *x = (VkDedicatedAllocationMemoryAllocateInfoNV *)(pPacket->pAllocateInfo->pNext);
-
-        if (x->sType == VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_MEMORY_ALLOCATE_INFO_NV ||
-            x->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO) {
-            x->image = m_objMapper.remap_images(x->image);
-            x->buffer = m_objMapper.remap_buffers(x->buffer);
-            if (!(x->image == VK_NULL_HANDLE || x->buffer == VK_NULL_HANDLE))
-                vktrace_LogError("Invalid handle in vkAllocateMemory pAllocate->pNext structure.");
-        }
-    }
     if (g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && !platformMatch()) {
         traceDeviceMemoryToMemoryTypeIndex[*(pPacket->pMemory)] = pPacket->pAllocateInfo->memoryTypeIndex;
     }
@@ -2461,6 +2450,7 @@ VkResult vkReplay::manually_replay_vkFlushMappedMemoryRanges(packet_vkFlushMappe
     VkMappedMemoryRange *localRanges = (VkMappedMemoryRange *)pPacket->pMemoryRanges;
 
     devicememoryObj *pLocalMems = VKTRACE_NEW_ARRAY(devicememoryObj, pPacket->memoryRangeCount);
+    std::set<VkDeviceMemory> flushed_mem;
     for (uint32_t i = 0; i < pPacket->memoryRangeCount; i++) {
         if (m_objMapper.m_devicememorys.find(pPacket->pMemoryRanges[i].memory) != m_objMapper.m_devicememorys.end()) {
             pLocalMems[i] = m_objMapper.m_devicememorys.find(pPacket->pMemoryRanges[i].memory)->second;
@@ -2477,6 +2467,9 @@ VkResult vkReplay::manually_replay_vkFlushMappedMemoryRanges(packet_vkFlushMappe
             VKTRACE_DELETE(pLocalMems);
             return VK_ERROR_VALIDATION_FAILED_EXT;
         }
+
+        if (flushed_mem.find(pPacket->pMemoryRanges[i].memory) != flushed_mem.end()) continue;
+        flushed_mem.insert(pPacket->pMemoryRanges[i].memory);
 
         if (!pLocalMems[i].pGpuMem->isPendingAlloc()) {
             if (pPacket->pMemoryRanges[i].size != 0) {
@@ -2589,7 +2582,7 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceProperties2KHR(packet_vkGetPhy
         vktrace_LogError("Error detected in GetPhysicalDeviceProperties2KHR() due to invalid remapped VkPhysicalDevice.");
         return;
     }
-    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pProperties);
+    vkreplay_process_pnext_structs(pPacket->header, (void *)pPacket->pProperties);
     // No need to remap pProperties
     m_vkFuncs.GetPhysicalDeviceProperties2KHR(remappedphysicalDevice, pPacket->pProperties);
     m_replay_gpu =
@@ -3031,8 +3024,8 @@ void vkReplay::manually_replay_vkGetImageMemoryRequirements2KHR(packet_vkGetImag
 
         ((VkImageMemoryRequirementsInfo2KHR *)pPacket->pInfo)->image = remappedimage;
     }
-    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pInfo);
-    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pMemoryRequirements);
+    vkreplay_process_pnext_structs(pPacket->header, (void *)pPacket->pInfo);
+    vkreplay_process_pnext_structs(pPacket->header, (void *)pPacket->pMemoryRequirements);
     m_vkDeviceFuncs.GetImageMemoryRequirements2KHR(remappeddevice, pPacket->pInfo, pPacket->pMemoryRequirements);
 
     replayGetImageMemoryRequirements[remappedimage] = pPacket->pMemoryRequirements->memoryRequirements;
@@ -3070,8 +3063,8 @@ void vkReplay::manually_replay_vkGetBufferMemoryRequirements2KHR(packet_vkGetBuf
     }
     *((VkBuffer *)(&pPacket->pInfo->buffer)) = remappedBuffer;
 
-    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pInfo);
-    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pMemoryRequirements);
+    vkreplay_process_pnext_structs(pPacket->header, (void *)pPacket->pInfo);
+    vkreplay_process_pnext_structs(pPacket->header, (void *)pPacket->pMemoryRequirements);
     m_vkDeviceFuncs.GetBufferMemoryRequirements2KHR(remappedDevice, pPacket->pInfo, pPacket->pMemoryRequirements);
     replayGetBufferMemoryRequirements[pPacket->pInfo->buffer] = pPacket->pMemoryRequirements->memoryRequirements;
     return;
@@ -3215,19 +3208,6 @@ VkResult vkReplay::manually_replay_vkCreateSampler(packet_vkCreateSampler *pPack
 
     // No need to remap pCreateInfo
     // No need to remap pAllocator
-
-    // Remap conversion handles in pPacket->pCreateInfo->pNext structs.
-    // We only remap from m_objMapper.remap_samplerycbcrconversions because
-    // m_objMapper.add_to_samplerycbcrconversionkhrs_map is not used.
-    if (pPacket->pCreateInfo && pPacket->pCreateInfo->pNext) {
-        VkSamplerYcbcrConversionInfo *sci = (VkSamplerYcbcrConversionInfo *)pPacket->pCreateInfo->pNext;
-        while (sci) {
-            if (sci->sType == VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO) {
-                sci->conversion = m_objMapper.remap_samplerycbcrconversions(sci->conversion);
-                sci = (VkSamplerYcbcrConversionInfo *)sci->pNext;
-            }
-        }
-    }
 
     replayResult = m_vkDeviceFuncs.CreateSampler(remappeddevice, pPacket->pCreateInfo, pPacket->pAllocator, &local_pSampler);
     if (replayResult == VK_SUCCESS) {
@@ -4183,7 +4163,40 @@ static std::unordered_map<VkDescriptorUpdateTemplateKHR, VkDescriptorUpdateTempl
     descriptorUpdateTemplateCreateInfo;
 
 VkResult vkReplay::manually_replay_vkCreateDescriptorUpdateTemplate(packet_vkCreateDescriptorUpdateTemplate *pPacket) {
-    return manually_replay_vkCreateDescriptorUpdateTemplateKHR((packet_vkCreateDescriptorUpdateTemplateKHR *)pPacket);
+    VkResult replayResult;
+    VkDescriptorUpdateTemplate local_pDescriptorUpdateTemplate;
+    VkDevice remappeddevice = m_objMapper.remap_devices(pPacket->device);
+    if (pPacket->device != VK_NULL_HANDLE && remappeddevice == VK_NULL_HANDLE) {
+        vktrace_LogError("Error detected in CreateDescriptorUpdateTemplate() due to invalid remapped VkDevice.");
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    *(reinterpret_cast<VkDescriptorUpdateTemplateCreateInfo **>(
+        const_cast<VkDescriptorUpdateTemplateEntry **>(&pPacket->pCreateInfo->pDescriptorUpdateEntries))) =
+        reinterpret_cast<VkDescriptorUpdateTemplateCreateInfo *>(vktrace_trace_packet_interpret_buffer_pointer(
+            pPacket->header, (intptr_t)pPacket->pCreateInfo->pDescriptorUpdateEntries));
+
+    *(const_cast<VkDescriptorSetLayout *>(&pPacket->pCreateInfo->descriptorSetLayout)) =
+        m_objMapper.remap_descriptorsetlayouts(pPacket->pCreateInfo->descriptorSetLayout);
+
+    replayResult = m_vkDeviceFuncs.CreateDescriptorUpdateTemplate(remappeddevice, pPacket->pCreateInfo, pPacket->pAllocator,
+                                                                  &local_pDescriptorUpdateTemplate);
+
+    if (replayResult == VK_SUCCESS) {
+        m_objMapper.add_to_descriptorupdatetemplates_map(*(pPacket->pDescriptorUpdateTemplate), local_pDescriptorUpdateTemplate);
+        descriptorUpdateTemplateCreateInfo[local_pDescriptorUpdateTemplate] =
+            reinterpret_cast<VkDescriptorUpdateTemplateCreateInfo *>(malloc(sizeof(VkDescriptorUpdateTemplateCreateInfo)));
+        memcpy(descriptorUpdateTemplateCreateInfo[local_pDescriptorUpdateTemplate], pPacket->pCreateInfo,
+               sizeof(VkDescriptorUpdateTemplateCreateInfo));
+        descriptorUpdateTemplateCreateInfo[local_pDescriptorUpdateTemplate]->pDescriptorUpdateEntries =
+            reinterpret_cast<VkDescriptorUpdateTemplateEntry *>(
+                malloc(sizeof(VkDescriptorUpdateTemplateEntry) * pPacket->pCreateInfo->descriptorUpdateEntryCount));
+        memcpy(const_cast<VkDescriptorUpdateTemplateEntry *>(
+                   descriptorUpdateTemplateCreateInfo[local_pDescriptorUpdateTemplate]->pDescriptorUpdateEntries),
+               pPacket->pCreateInfo->pDescriptorUpdateEntries,
+               sizeof(VkDescriptorUpdateTemplateEntry) * pPacket->pCreateInfo->descriptorUpdateEntryCount);
+    }
+    return replayResult;
 }
 
 VkResult vkReplay::manually_replay_vkCreateDescriptorUpdateTemplateKHR(packet_vkCreateDescriptorUpdateTemplateKHR *pPacket) {
@@ -4273,6 +4286,12 @@ void vkReplay::manually_replay_vkDestroyDescriptorUpdateTemplateKHR(packet_vkDes
 
 void vkReplay::remapHandlesInDescriptorSetWithTemplateData(VkDescriptorUpdateTemplateKHR remappedDescriptorUpdateTemplate,
                                                            char *pData) {
+    if (VK_NULL_HANDLE == remappedDescriptorUpdateTemplate) {
+        vktrace_LogError(
+            "Error detected in remapHandlesInDescriptorSetWithTemplateData() due to invalid remapped VkDescriptorUpdateTemplate.");
+        return;
+    }
+
     for (uint32_t i = 0; i < descriptorUpdateTemplateCreateInfo[remappedDescriptorUpdateTemplate]->descriptorUpdateEntryCount;
          i++) {
         for (uint32_t j = 0;
@@ -4339,13 +4358,13 @@ void vkReplay::manually_replay_vkUpdateDescriptorSetWithTemplate(packet_vkUpdate
     VkDescriptorUpdateTemplate remappedDescriptorUpdateTemplate =
         m_objMapper.remap_descriptorupdatetemplates(pPacket->descriptorUpdateTemplate);
     if (pPacket->descriptorUpdateTemplate != VK_NULL_HANDLE && remappedDescriptorUpdateTemplate == VK_NULL_HANDLE) {
-        vktrace_LogError(
-            "Error detected in UpdateDescriptorSetWithTemplate() due to invalid remapped VkDescriptorUpdateTemplateKHR.");
+        vktrace_LogError("Error detected in UpdateDescriptorSetWithTemplate() due to invalid remapped VkDescriptorUpdateTemplate.");
         return;
     }
 
     // Map handles inside of pData
-    remapHandlesInDescriptorSetWithTemplateData(remappedDescriptorUpdateTemplate, (char *)pPacket->pData);
+    remapHandlesInDescriptorSetWithTemplateData(remappedDescriptorUpdateTemplate,
+                                                const_cast<char *>(reinterpret_cast<const char *>(pPacket->pData)));
 
     m_vkDeviceFuncs.UpdateDescriptorSetWithTemplate(remappeddevice, remappedDescriptorSet, remappedDescriptorUpdateTemplate,
                                                     pPacket->pData);
@@ -4373,7 +4392,8 @@ void vkReplay::manually_replay_vkUpdateDescriptorSetWithTemplateKHR(packet_vkUpd
     }
 
     // Map handles inside of pData
-    remapHandlesInDescriptorSetWithTemplateData(remappedDescriptorUpdateTemplate, (char *)pPacket->pData);
+    remapHandlesInDescriptorSetWithTemplateData(remappedDescriptorUpdateTemplate,
+                                                const_cast<char *>(reinterpret_cast<const char *>(pPacket->pData)));
 
     m_vkDeviceFuncs.UpdateDescriptorSetWithTemplateKHR(remappeddevice, remappedDescriptorSet, remappedDescriptorUpdateTemplate,
                                                        pPacket->pData);
@@ -4812,4 +4832,117 @@ VkResult vkReplay::manually_replay_vkEnumerateDeviceExtensionProperties(packet_v
     }
 
     return result;
+}
+
+// vkReplay::interpret_pnext_handles translate handles in all Vulkan structures that have a
+// pNext and at least one handle.
+//
+// Ideally, this function would be automatically generated. It's not, so if a new structure
+// is added to Vulkan that contains a pNext and a handle, this function should add handling
+// of that structure.
+
+void vkReplay::interpret_pnext_handles(void *struct_ptr) {
+    VkApplicationInfo *pnext = (VkApplicationInfo *)struct_ptr;
+
+    // We skip the first struct - it is the arg to the api call, and handles are translated
+    // by the api call handling function above.
+    if (pnext) pnext = (VkApplicationInfo *)pnext->pNext;
+
+    // Loop through all the pnext structures attached to struct_ptr and
+    // remap handles in those structures.
+    while (pnext) {
+        switch (pnext->sType) {
+            case VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO: {
+                VkDeviceGroupDeviceCreateInfo *p = (VkDeviceGroupDeviceCreateInfo *)pnext;
+                for (uint32_t i = 0; i < p->physicalDeviceCount; i++) {
+                    *((VkPhysicalDevice *)(&p->pPhysicalDevices[i])) = m_objMapper.remap_physicaldevices(p->pPhysicalDevices[i]);
+                }
+            } break;
+            case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO: {
+                VkSamplerYcbcrConversionInfo *p = (VkSamplerYcbcrConversionInfo *)pnext;
+                p->conversion = m_objMapper.remap_samplerycbcrconversions(p->conversion);
+            } break;
+            case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_MEMORY_ALLOCATE_INFO_NV:
+            case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO: {
+                VkDedicatedAllocationMemoryAllocateInfoNV *p = (VkDedicatedAllocationMemoryAllocateInfoNV *)pnext;
+                p->image = m_objMapper.remap_images(p->image);
+                p->buffer = m_objMapper.remap_buffers(p->buffer);
+            } break;
+            case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV: {
+                VkAccelerationStructureMemoryRequirementsInfoNV *p = (VkAccelerationStructureMemoryRequirementsInfoNV *)pnext;
+                p->accelerationStructure = m_objMapper.remap_accelerationstructurenvs(p->accelerationStructure);
+            } break;
+            case VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR: {
+                VkAcquireNextImageInfoKHR *p = (VkAcquireNextImageInfoKHR *)pnext;
+                p->swapchain = m_objMapper.remap_swapchainkhrs(p->swapchain);
+                p->semaphore = m_objMapper.remap_semaphores(p->semaphore);
+                p->fence = m_objMapper.remap_fences(p->fence);
+            } break;
+            case VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV: {
+                VkBindAccelerationStructureMemoryInfoNV *p = (VkBindAccelerationStructureMemoryInfoNV *)pnext;
+                p->accelerationStructure = m_objMapper.remap_accelerationstructurenvs(p->accelerationStructure);
+                p->memory = m_objMapper.remap_devicememorys(p->memory);
+            } break;
+
+#if 0
+            List of structures with pNext pointers that include handles and are not yet
+            implemented (as of Vulkan Header 1.1.105).  Note that many of these structs
+            are directly passed in as args to Vulkan API calls. Handles in direct args
+            structs are translated by the handler functions, so those API replay
+            functions work OK.  We just do not yet handle them correctly in pNext lists.
+
+            VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO
+            VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO
+            VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR
+            VK_STRUCTURE_TYPE_BIND_SPARSE_INFO  // Has subs-structs with handles
+            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_EXT
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2
+            VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO
+            VK_STRUCTURE_TYPE_CMD_PROCESS_COMMANDS_INFO_NVX  // Has sub-structs with handles
+            VK_STRUCTURE_TYPE_CMD_RESERVE_SPACE_FOR_COMMANDS_INFO_NVX
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO
+            VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO
+            VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT
+            VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+            VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO
+            VK_STRUCTURE_TYPE_DISPLAY_PLANE_INFO_2_KHR
+            VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR
+            VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO
+            VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV
+            VK_STRUCTURE_TYPE_GEOMETRY_NV
+            VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO
+            VK_STRUCTURE_TYPE_HDR_METADATA_EXT
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2
+            VK_STRUCTURE_TYPE_IMAGE_SPARSE_MEMORY_REQUIREMENTS_INFO_2
+            VK_STRUCTURE_TYPE_IMAGE_SWAPCHAIN_CREATE_INFO_KHR
+            VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO
+            VK_STRUCTURE_TYPE_IMPORT_FENCE_FD_INFO_KHR
+            VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR
+            VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE
+            VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+            VK_STRUCTURE_TYPE_PRESENT_INFO_KHR
+            VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO
+            VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR
+            VK_STRUCTURE_TYPE_SHADER_MODULE_VALIDATION_CACHE_CREATE_INFO_EXT
+            VK_STRUCTURE_TYPE_SUBMIT_INFO
+            VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET  // Has sub-structs with handles
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV
+#endif
+            default:
+                break;
+        }
+        pnext = (VkApplicationInfo *)pnext->pNext;
+    }
+    return;
 }
